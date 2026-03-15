@@ -40,6 +40,12 @@ class SessionMemory:
             context = last_answer[:200].replace("\n", " ")
             return f"[Referring to: {context}] {query}"
 
+        # "What did they say about it?" — use previous answer as context
+        if "what did" in q_lower and any(p in words for p in ("they", "he", "she", "them")):
+            if "about" in q_lower or "say" in q_lower:
+                context = last_answer[:250].replace("\n", " ")
+                return f"[Referring to: {context}] {query}"
+
         # Very short follow-up — attach previous question for context
         if len(words) < 5:
             return f"{last_user} — specifically: {query}"

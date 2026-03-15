@@ -62,6 +62,7 @@ def retrieve(
     results = []
 
     for idx in ranked:
+        # Small floor to avoid extremely tiny scores / noise
         if fused[idx] < 0.01:
             break
 

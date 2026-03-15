@@ -12,15 +12,16 @@ to run the system end-to-end.
 
 ## Demo Video
 
-> [Click here to watch the demo](ADD_YOUR_VIDEO_LINK_HERE)
->
-> The demo covers:
-> - Thread selection and locking to `Re: checkbook and budget`
-> - Asking who sent the email — grounded answer with citation
-> - Pronoun handling — "what did they say about it?" triggers rewrite
-> - Correction handling — changing question mid-conversation
-> - Graceful failure — "What is the weather in New York?" returns no hallucination
-> - Trace log walkthrough in VS Code showing user_text, rewrite, scores, latency
+[![Email RAG Chatbot Demo](https://img.youtube.com/vi/PupPLT9KFV4/0.jpg)](https://youtu.be/PupPLT9KFV4)
+
+> Click the thumbnail above to watch the full demo on YouTube.
+
+The demo covers:
+- Thread selection and locking to `Re: checkbook and budget`
+- Asking who sent the email — grounded answer with citation `[msg: <5946371...>]`
+- Pronoun handling — "what did they say about it?" triggers query rewrite
+- Graceful failure — "What is the weather in New York?" returns no hallucination
+- Trace log walkthrough showing user_text, rewrite, scores, latency_ms
 
 ---
 
@@ -526,7 +527,7 @@ a live test session on 15 March 2026:
 | `user_text` | what is the 2 files she is talking about | Exactly what the user typed |
 | `rewrite` | same as user_text | No pronoun detected — query unchanged |
 | `retrieved` | 1 chunk, score 0.9045 | High confidence match found |
-| `used_msgs` | `<5946371...>` | The email message used in the answer |
+| `used_msgs` | `<5946371...>` | The exact email used in the answer |
 | `answer` | Lucy, We can discuss... | Grounded snippet from that message |
 | `citations` | type: email, page: null | Email source, no attachment page |
 | `latency_ms` | 36 | Full response in 36 milliseconds |
@@ -585,15 +586,6 @@ curl -X POST http://localhost:8000/ask \
 | **Grounding and faithfulness** | Every answer ends with `[msg: <5946371...>]` or `[msg: <id>, page: N]` for attachments. Score threshold of 0.35 prevents returning irrelevant chunks. No hallucination — confirmed by graceful failure test. |
 | **Completeness and relevance** | Top-5 chunks per answer. Max 2 chunks per message_id forces variety. Intent detection gives summaries as bullets, who-questions as sender lines, when-questions as date lines. |
 | **Thread discipline** | `start_session(thread_id)` filters every retrieval call to `Re: checkbook and budget`. Switching thread clears history. Explicit toggle required to search outside. |
-| **Conversational understanding** | Pronoun resolution tested: "What did they say about it?" rewrites using previous answer. Short follow-ups prepend previous question. Last 5 turns + entities (dates, amounts, filenames) stored per session. Rewrite always visible in debug panel. |
+| **Conversational understanding** | Pronoun resolution tested — "What did they say about it?" rewrites using previous answer. Short follow-ups prepend previous question. Last 5 turns + entities stored per session. Rewrite always visible in debug panel. |
 | **Clarity** | Answers formatted by intent. Email headers stripped. Graceful failure on out-of-scope questions. One citation per source block. 36ms latency on warm cache. |
 | **Transparency** | Debug panel: rewrite + chunk IDs + fused/BM25/vec scores. `trace.jsonl` per turn with all fields. Real trace shown above with field-by-field explanation. |
-```
-
----
-
-## Now do this — push it to GitHub
-
-**Step 1** — Add your video link. Find this line at the top:
-```
->

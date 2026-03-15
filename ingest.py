@@ -1,5 +1,5 @@
 import email
-import os
+import html.parser
 import json
 import re
 import pickle
@@ -9,6 +9,11 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 import fitz  # pymupdf
+
+try:
+    from docx import Document as DocxDocument
+except ImportError:
+    DocxDocument = None
 
 # ── paths ──────────────────────────────────────────────────────────────────
 EMAILS_DIR  = Path("data/emails")
@@ -49,6 +54,7 @@ def parse_email_file(path: Path):
     date       = msg.get("Date", "")
     sender     = msg.get("From", "")
     to         = msg.get("To", "")
+    cc         = msg.get("Cc", "")
     subject    = msg.get("Subject", "")
 
     chunks = []
@@ -76,6 +82,7 @@ def parse_email_file(path: Path):
             "date"       : date,
             "from"       : sender,
             "to"         : to,
+            "cc"         : cc,
             "subject"    : subject,
             "text"       : body.strip(),
             "type"       : "email",
@@ -86,11 +93,20 @@ def parse_email_file(path: Path):
         for part in msg.walk():
             cd    = str(part.get("Content-Disposition") or "")
             fname = part.get_filename() or ""
-            if "attachment" in cd and fname.lower().endswith(".pdf"):
-                payload = part.get_payload(decode=True)
-                if payload:
-                    pdf_chunks = parse_pdf(payload, fname, message_id, thread_id)
-                    chunks.extend(pdf_chunks)
+            if "attachment" not in cd or not fname:
+                continue
+            payload = part.get_payload(decode=True)
+            if not payload:
+                continue
+            fname_lower = fname.lower()
+            if fname_lower.endswith(".pdf"):
+                chunks.extend(parse_pdf(payload, fname, message_id, thread_id))
+            elif fname_lower.endswith(".txt"):
+                chunks.extend(parse_txt(payload, fname, message_id, thread_id))
+            elif fname_lower.endswith((".html", ".htm")):
+                chunks.extend(parse_html(payload, fname, message_id, thread_id))
+            elif fname_lower.endswith(".docx") and DocxDocument is not None:
+                chunks.extend(parse_docx(payload, fname, message_id, thread_id))
 
     return chunks
 
@@ -114,6 +130,89 @@ def parse_pdf(data: bytes, filename: str, message_id: str, thread_id: str):
     except Exception as e:
         print(f"  Could not parse PDF {filename}: {e}")
     return chunks
+
+
+def _attachment_chunks(
+    message_id: str,
+    thread_id: str,
+    filename: str,
+    text_pieces: list,
+    chunk_type: str = "attachment",
+) -> list:
+    """Build chunk dicts for attachment text pieces; page_no = 1-based chunk index."""
+    chunks = []
+    for i, piece in enumerate(text_pieces):
+        if not (piece and str(piece).strip()):
+            continue
+        chunks.append({
+            "chunk_id"   : f"{message_id}::{filename}::{i}",
+            "message_id" : message_id,
+            "thread_id"  : thread_id,
+            "filename"   : filename,
+            "page_no"    : i + 1,
+            "text"       : piece.strip(),
+            "type"       : chunk_type,
+        })
+    return chunks
+
+
+def parse_txt(data: bytes, filename: str, message_id: str, thread_id: str) -> list:
+    """Extract text from .txt attachment and chunk with overlap."""
+    try:
+        text = data.decode("utf-8", errors="replace")
+        pieces = chunk_text(text)
+        return _attachment_chunks(message_id, thread_id, filename, pieces)
+    except Exception as e:
+        print(f"  Could not parse TXT {filename}: {e}")
+        return []
+
+
+class _HTMLTextExtractor(html.parser.HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.text_parts = []
+
+    def handle_data(self, data):
+        self.text_parts.append(data)
+
+    def get_text(self):
+        return " ".join(self.text_parts)
+
+
+def parse_html(data: bytes, filename: str, message_id: str, thread_id: str) -> list:
+    """Extract text from .html/.htm attachment and chunk with overlap."""
+    try:
+        raw = data.decode("utf-8", errors="replace")
+        parser = _HTMLTextExtractor()
+        parser.feed(raw)
+        text = parser.get_text()
+        text = re.sub(r"\s+", " ", text).strip()
+        if not text:
+            return []
+        pieces = chunk_text(text)
+        return _attachment_chunks(message_id, thread_id, filename, pieces)
+    except Exception as e:
+        print(f"  Could not parse HTML {filename}: {e}")
+        return []
+
+
+def parse_docx(data: bytes, filename: str, message_id: str, thread_id: str) -> list:
+    """Extract text from .docx attachment and chunk with overlap."""
+    if DocxDocument is None:
+        print("  python-docx not installed; skip DOCX:", filename)
+        return []
+    try:
+        import io
+        doc = DocxDocument(io.BytesIO(data))
+        full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        if not full_text.strip():
+            return []
+        pieces = chunk_text(full_text)
+        return _attachment_chunks(message_id, thread_id, filename, pieces)
+    except Exception as e:
+        print(f"  Could not parse DOCX {filename}: {e}")
+        return []
+
 
 # ── main build function ──────────────────────────────────────────────────────
 def build_index():

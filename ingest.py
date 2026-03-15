@@ -130,6 +130,10 @@ def build_index():
     thread_ids = set(c["thread_id"] for c in all_chunks)
     print(f"  Total threads: {len(thread_ids)}")
 
+    if not all_chunks:
+        print("\nNo email data found. Add .eml files to data/emails/ and run again.")
+        return
+
     # save chunks
     with open(CHUNKS_FILE, "w") as f:
         json.dump(all_chunks, f)
